@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "macros.html" as macros %}
+
+{% block header_extra %}
+<style type="text/css" media="screen">
+    /* make code wrap */
+    pre {
+        /* Since CSS 2.1 */
+        white-space: pre-wrap;
+        /* Mozilla, since 1999 */
+        white-space: -moz-pre-wrap;
+        /* Opera 4-6 */
+        white-space: -pre-wrap;
+        /* Opera 7 */
+        white-space: -o-pre-wrap;
+        /* Internet Explorer 5.5+ */
+        word-wrap: break-word;
+    }
+</style>
+{% endblock header_extra %}
+
+{% block content %}
+<h3>{{ file_name }}</h3>
+{{ macros::back_button(label="Back", target=".") }}
+<div width="100%" style="margin: 8px; border: #6272a4 dashed; padding: 8px;">
+    {% if unsafe_content %}
+    {{ content | safe }}
+    {% else %}
+    <pre>{{ content }}</pre>
+    {% endif %}
+</div>
+{% endblock content %}

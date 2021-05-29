@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style type="text/css" media="screen">
+        body {
+            background-color: #282a36;
+            color: #f8f8f2;
+        }
+
+        a {
+            color: #ff79c6;
+        }
+
+        a:visited {
+            color: #bd93f9;
+        }
+
+        .back_button_div {
+            height: 45px;
+            margin: 8px;
+            border: #bd93f9 solid;
+        }
+
+        .back_button_anchor {
+            background-color: #44475a;
+            height: 100%;
+            width: 100%;
+            display: flex;
+            align-items: center;
+        }
+
+        .back_button_paragraph {
+            text-align: center;
+            width: 100%;
+            color: #ff5555;
+            font-size: 25px;
+        }
+    </style>
+    {% block header_extra %}{% endblock header_extra%}
+</head>
+
+<body>
+    {% block content %}{% endblock content %}
+</body>
+
+</html>

@@ -1,0 +1,17 @@
+[package]
+name = "ultiserve"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.40"
+env_logger = "0.8.3"
+log = "0.4.14"
+serde = { version = "1.0.126", features = ["derive"] }
+structopt = "0.3.21"
+syntect = { version = "4.5.0", features = ["dump-load"] }
+tera = "1.10.0"
+tokio = { version = "1.6.0", features = ["rt-multi-thread", "fs", "macros"] }
+warp = "0.3.1"

@@ -1,0 +1,7 @@
+{% macro back_button(label, target) %}
+<div class="back_button_div" width="100%">
+    <a class="back_button_anchor" href="{{ target }}">
+        <p class="back_button_paragraph">{{ label }}</p>
+    </a>
+</div>
+{% endmacro back_button %}
