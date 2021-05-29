@@ -23,6 +23,7 @@ use warp::{
 };
 
 #[derive(Debug, StructOpt)]
+#[structopt(about = "Serve your files over http!")]
 struct Opt {
     #[structopt(
         short,
@@ -41,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
     // initialize logger for debugging
     env_logger::init();
 
-    let opt = Opt::from_args_safe()?;
+    let opt = Opt::from_args();
 
     let mut tera = Tera::default();
     // add templates. we wanna read them at compile time, so we have a single complete binary.
