@@ -1,8 +1,14 @@
+use crossterm::{
+    execute,
+    style::{Colorize, Print, PrintStyledContent},
+};
 use std::{
     ffi::OsStr,
+    io::stdout,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Instant,
 };
 use structopt::StructOpt;
 use syntect::{
@@ -44,8 +50,17 @@ async fn main() -> anyhow::Result<()> {
 
     let opt = Opt::from_args();
 
+    // show startup message
+    execute!(
+        stdout(),
+        Print("Serving files at "),
+        // we always print localhost, no matter the bind address
+        PrintStyledContent(format!("http://127.0.0.1:{}\n", &opt.addr.port()).green()),
+    )?;
+
     let mut tera = Tera::default();
-    // add templates. we wanna read them at compile time, so we have a single complete binary.
+    // add templates. we wanna read them at compile time, so we have a single
+    // complete binary.
     tera.add_raw_templates(vec![
         (
             "index.html",
@@ -75,19 +90,36 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let addr = tools.opt.addr;
-    warp::serve(warp::path::full().and_then(move |path| on_get(path, Arc::clone(&tools))))
+    warp::serve(warp::path::full().and_then(move |path| on_get_timed(path, Arc::clone(&tools))))
         .run(addr)
         .await;
 
     Ok(())
 }
 
+// calls on_get and prints the time needed to execute it.
+async fn on_get_timed(full_path: FullPath, tools: Arc<Tools>) -> Result<Box<dyn Reply>, Rejection> {
+    let path_str = full_path.as_str().to_string();
+    let start_time = Instant::now();
+    let reply = on_get(full_path, Arc::clone(&tools)).await;
+    let time_needed = start_time.elapsed();
+    println!(
+        "Processed request to {} in {}{}",
+        path_str.blue(),
+        time_needed.as_millis().to_string().red(),
+        "ms".red(),
+    );
+
+    reply
+}
+
 /// this is called once we get a request.
 async fn on_get(full_path: FullPath, tools: Arc<Tools>) -> Result<Box<dyn Reply>, Rejection> {
+    let full_path = full_path.as_str();
     // start off at path to serve (defaults to .)
     let mut path = tools.opt.dir.clone();
     // we don't want to go to root, so we remove the / at the start
-    path.push(full_path.as_str().trim_start_matches('/'));
+    path.push(full_path.trim_start_matches('/'));
     match tokio::fs::read_dir(&path).await {
         // if we have a dir render index page
         Ok(mut dir) => {
@@ -122,8 +154,8 @@ async fn on_get(full_path: FullPath, tools: Arc<Tools>) -> Result<Box<dyn Reply>
                     // insert "<unknown>" in case something goes wrong getting the name of the
                     // current directory
                     .unwrap_or_else(|_| "<unknown>".to_string()),
-                current_dir: full_path.as_str().trim_end_matches('/').to_string(),
-                has_parent: full_path.as_str() != "/",
+                current_dir: full_path.trim_end_matches('/').to_string(),
+                has_parent: full_path != "/",
             };
 
             if let Ok(rendered) =
