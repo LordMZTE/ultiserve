@@ -1,3 +1,10 @@
+use comrak::{
+    nodes::{AstNode, NodeCodeBlock, NodeHtmlBlock, NodeValue},
+    Arena,
+    ComrakExtensionOptions,
+    ComrakOptions,
+    ComrakRenderOptions,
+};
 use crossterm::{
     execute,
     style::{Colorize, Print, PrintStyledContent},
@@ -193,19 +200,109 @@ fn render_file_to_reply(
     mut content: String,
 ) -> Result<Html<String>, Rejection> {
     let file_ext = path.extension().and_then(OsStr::to_str);
-    // don't put html files into the file template, just send them raw.
-    if let Some("html") = file_ext {
-        return Ok(reply::html(content));
-    }
+    match file_ext {
+        // don't put html files into the file template, just send them raw.
+        Some("html") | Some("html5") => Ok(reply::html(content)),
+        // render markdown
+        Some("md") | Some("markdown") => {
+            render_markdown_to_reply(Arc::clone(&tools), path, &content)
+        },
+        ext => {
+            let mut unsafe_content = false;
 
-    let mut unsafe_content = false;
-    if let Some(syntax) = file_ext.and_then(|e| tools.syntax_set.find_syntax_by_extension(e)) {
+            if let Some(highlighted) =
+                ext.and_then(|ext| syntax_highlight_html(Arc::clone(&tools), ext, &content))
+            {
+                content = highlighted;
+                unsafe_content = true;
+            }
+
+            create_file_reply(tools, path, content, unsafe_content)
+        },
+    }
+}
+
+/// highlights the given string with syntax for the given file extension if it
+/// exists, and renders it as html.
+fn syntax_highlight_html(tools: Arc<Tools>, file_ext: &str, content: &str) -> Option<String> {
+    tools.syntax_set.find_syntax_by_token(file_ext).map(|s| {
         let theme = &tools.theme_set.themes["Dracula"];
-        content = highlighted_html_for_string(&content, &tools.syntax_set, syntax, theme);
-        unsafe_content = true;
+        highlighted_html_for_string(content, &tools.syntax_set, s, theme)
+    })
+}
+
+/// renders a markdown file to a http reply
+fn render_markdown_to_reply(
+    tools: Arc<Tools>,
+    path: &Path,
+    content: &str,
+) -> Result<Html<String>, Rejection> {
+    let arena = Arena::new();
+    let options = ComrakOptions {
+        extension: ComrakExtensionOptions {
+            strikethrough: true,
+            table: true,
+            autolink: true,
+            tasklist: true,
+            header_ids: Some("user-content-".to_string()),
+            ..Default::default()
+        },
+        render: ComrakRenderOptions {
+            // needed to render syntax highlighted code blocks
+            unsafe_: true,
+            ..Default::default()
+        },
+        parse: Default::default(),
+    };
+
+    let document = comrak::parse_document(&arena, content, &options);
+
+    // recursive function to iterate over markdown AST
+    fn iter_nodes<'a, F>(node: &'a AstNode<'a>, f: &F)
+    where
+        F: Fn(&'a AstNode<'a>),
+    {
+        f(node);
+        for c in node.children() {
+            iter_nodes(c, f);
+        }
     }
 
-    create_file_reply(tools, path, content, unsafe_content)
+    iter_nodes(document, &|node| {
+        let mut new_val = None;
+        if let NodeValue::CodeBlock(NodeCodeBlock {
+            fenced: true,
+            info,
+            literal,
+            ..
+        }) = &node.data.borrow().value
+        {
+            // only continue if info and content are valid utf8
+            if let (Ok(info), Ok(literal)) = (
+                // clone required to allocate string
+                String::from_utf8(info.clone()),
+                String::from_utf8(literal.clone()),
+            ) {
+                if let Some(html) = syntax_highlight_html(Arc::clone(&tools), &info, &literal) {
+                    let mut html_block = NodeHtmlBlock::default();
+                    html_block.literal = html.into();
+                    new_val = Some(NodeValue::HtmlBlock(html_block));
+                }
+            }
+        }
+
+        // we have to do this here, so node isn't borrowed while we swap the value
+        if let Some(val) = new_val {
+            node.data.borrow_mut().value = val;
+        }
+    });
+
+    let mut html = vec![];
+    comrak::format_html(document, &options, &mut html)
+        .map_err(|_| UltiserveReject::MarkdownFail)?;
+    let html = String::from_utf8(html).map_err(|_| UltiserveReject::MarkdownFail)?;
+
+    create_file_reply(tools, path, html, true)
 }
 
 /// renders the file template, returning a reply or rejection.
@@ -241,6 +338,7 @@ struct Tools {
 #[derive(Debug)]
 enum UltiserveReject {
     RenderFail,
+    MarkdownFail,
 }
 
 impl Reject for UltiserveReject {}

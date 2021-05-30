@@ -4,7 +4,7 @@ A file server that serves local files over http with some fancy bits.
 ## Features
 - File index with icons
 - Syntax highlighting
-- (Coming soon) markdown rendering
+- markdown rendering
 - Completely JS-free
 
 ## Compiling
