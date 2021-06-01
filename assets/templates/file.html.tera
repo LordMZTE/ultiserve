@@ -16,11 +16,26 @@
         /* Internet Explorer 5.5+ */
         word-wrap: break-word;
     }
+
+    .raw_button_div {
+        float: right;
+        height: 25px;
+    }
+
+    .raw_button_paragraph {
+        font-size: 20px;
+    }
 </style>
 {% endblock header_extra %}
 
 {% block content %}
-<h3>{{ file_name }}</h3>
+<div class="raw_button_div back_button_div">
+    <a href="{{ raw_url }}" class="back_button_anchor">
+        <p class="raw_button_paragraph back_button_paragraph">View Raw</p>
+    </a>
+</div>
+
+<h2>{{ file_name }}</h2>
 {{ macros::back_button(label="Back", target=".") }}
 <div width="100%" style="margin: 8px; border: #6272a4 dashed; padding: 8px;">
     {% if unsafe_content %}

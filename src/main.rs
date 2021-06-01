@@ -97,18 +97,32 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let addr = tools.opt.addr;
-    warp::serve(warp::path::full().and_then(move |path| on_get_timed(path, Arc::clone(&tools))))
-        .run(addr)
-        .await;
+    warp::serve(
+        warp::path::full()
+            .and(warp::query::<GetParams>())
+            .and_then(move |path, get_params| on_get_timed(path, get_params, Arc::clone(&tools))),
+    )
+    .run(addr)
+    .await;
 
     Ok(())
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct GetParams {
+    #[serde(default)]
+    raw: bool,
+}
+
 // calls on_get and prints the time needed to execute it.
-async fn on_get_timed(full_path: FullPath, tools: Arc<Tools>) -> Result<Box<dyn Reply>, Rejection> {
+async fn on_get_timed(
+    full_path: FullPath,
+    get_params: GetParams,
+    tools: Arc<Tools>,
+) -> Result<Box<dyn Reply>, Rejection> {
     let path_str = full_path.as_str().to_string();
     let start_time = Instant::now();
-    let reply = on_get(full_path, Arc::clone(&tools)).await;
+    let reply = on_get(full_path, get_params, Arc::clone(&tools)).await;
     let time_needed = start_time.elapsed();
     println!(
         "Processed request to {} in {}{}",
@@ -121,7 +135,11 @@ async fn on_get_timed(full_path: FullPath, tools: Arc<Tools>) -> Result<Box<dyn 
 }
 
 /// this is called once we get a request.
-async fn on_get(full_path: FullPath, tools: Arc<Tools>) -> Result<Box<dyn Reply>, Rejection> {
+async fn on_get(
+    full_path: FullPath,
+    get_params: GetParams,
+    tools: Arc<Tools>,
+) -> Result<Box<dyn Reply>, Rejection> {
     let full_path = full_path.as_str();
     // start off at path to serve (defaults to .)
     let mut path = tools.opt.dir.clone();
@@ -180,8 +198,19 @@ async fn on_get(full_path: FullPath, tools: Arc<Tools>) -> Result<Box<dyn Reply>
                 // check if we have valid utf8
                 match String::from_utf8(bytes.clone()) {
                     // if the file is valid utf8, render the file template
-                    Ok(file_content) => render_file_to_reply(tools, &path, file_content)
-                        .map(|r| Box::new(r) as Box<dyn Reply>),
+                    Ok(file_content) => {
+                        if get_params.raw {
+                            Ok(Box::new(file_content))
+                        } else {
+                            render_file_to_reply(
+                                tools,
+                                &path,
+                                file_content,
+                                full_path.trim_end_matches("/"),
+                            )
+                            .map(|r| Box::new(r) as Box<dyn Reply>)
+                        }
+                    },
                     // if the file is not utf8, give the client the raw bytes
                     _ => Ok(Box::new(bytes)),
                 }
@@ -198,6 +227,7 @@ fn render_file_to_reply(
     tools: Arc<Tools>,
     path: &Path,
     mut content: String,
+    url: &str,
 ) -> Result<Html<String>, Rejection> {
     let file_ext = path.extension().and_then(OsStr::to_str);
     match file_ext {
@@ -205,7 +235,7 @@ fn render_file_to_reply(
         Some("html") | Some("html5") => Ok(reply::html(content)),
         // render markdown
         Some("md") | Some("markdown") => {
-            render_markdown_to_reply(Arc::clone(&tools), path, &content)
+            render_markdown_to_reply(Arc::clone(&tools), path, &content, url)
         },
         ext => {
             let mut unsafe_content = false;
@@ -217,7 +247,7 @@ fn render_file_to_reply(
                 unsafe_content = true;
             }
 
-            create_file_reply(tools, path, content, unsafe_content)
+            create_file_reply(tools, path, content, unsafe_content, url)
         },
     }
 }
@@ -236,6 +266,7 @@ fn render_markdown_to_reply(
     tools: Arc<Tools>,
     path: &Path,
     content: &str,
+    url: &str,
 ) -> Result<Html<String>, Rejection> {
     let arena = Arena::new();
     let options = ComrakOptions {
@@ -302,7 +333,7 @@ fn render_markdown_to_reply(
         .map_err(|_| UltiserveReject::MarkdownFail)?;
     let html = String::from_utf8(html).map_err(|_| UltiserveReject::MarkdownFail)?;
 
-    create_file_reply(tools, path, html, true)
+    create_file_reply(tools, path, html, true, url)
 }
 
 /// renders the file template, returning a reply or rejection.
@@ -311,6 +342,7 @@ fn create_file_reply(
     path: &Path,
     content: String,
     unsafe_content: bool,
+    url: &str,
 ) -> Result<Html<String>, Rejection> {
     Context::from_serialize(FileContent {
         content,
@@ -319,6 +351,7 @@ fn create_file_reply(
             .canonicalize()
             .map(|b| b.to_string_lossy().to_string())
             .unwrap_or_else(|_| "<unknown>".to_string()),
+        raw_url: format!("{}?raw=true", url),
     })
     .and_then(|c| tools.tera.render("file.html", &c))
     .map(reply::html)
@@ -362,4 +395,5 @@ struct FileContent {
     content: String,
     unsafe_content: bool,
     file_name: String,
+    raw_url: String,
 }
